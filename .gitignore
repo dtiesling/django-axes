@@ -1,9 +1,10 @@
-django_axes.egg-info
 *.pyc
+.coverage
+.DS_Store
+.hg
+.tox/
 build
 dist
-.hg
-.DS_Store
+django_axes.egg-info
 docs/_build
-.tox/
 tox.ini

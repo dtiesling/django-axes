@@ -9,7 +9,7 @@ from django.dispatch import receiver
 from django.dispatch import Signal
 from django.utils import timezone
 
-from axes import settings as axes_settings
+from axes.conf import settings
 from axes.attempts import get_cache_key
 from axes.attempts import get_cache_timeout
 from axes.attempts import get_user_attempts
@@ -21,7 +21,7 @@ from axes.utils import get_ip
 from axes.utils import query2str
 
 
-log = logging.getLogger(axes_settings.LOGGER)
+log = logging.getLogger(settings.AXES_LOGGER)
 
 
 user_locked_out = Signal(providing_args=['request', 'username', 'ip_address'])
@@ -37,7 +37,7 @@ def log_user_login_failed(sender, credentials, request, **kwargs):
     path_info = request.META.get('PATH_INFO', '<unknown>')[:255]
     http_accept = request.META.get('HTTP_ACCEPT', '<unknown>')[:1025]
 
-    if axes_settings.NEVER_LOCKOUT_WHITELIST and ip_in_whitelist(ip_address):
+    if settings.AXES_NEVER_LOCKOUT_WHITELIST and ip_in_whitelist(ip_address):
         return
 
     failures = 0
@@ -77,7 +77,7 @@ def log_user_login_failed(sender, credentials, request, **kwargs):
                 get_client_str(username, ip_address, user_agent, path_info)
             )
             count_msg = 'Count = {0} of {1}'.format(
-                failures, axes_settings.FAILURE_LIMIT
+                failures, settings.AXES_FAILURE_LIMIT
             )
             log.info('{0} {1}'.format(fail_msg, count_msg))
     else:
@@ -104,8 +104,8 @@ def log_user_login_failed(sender, credentials, request, **kwargs):
     # no matter what, we want to lock them out if they're past the number of
     # attempts allowed, unless the user is set to notlockable
     if (
-        failures >= axes_settings.FAILURE_LIMIT and
-        axes_settings.LOCK_OUT_AT_FAILURE and
+        failures >= settings.AXES_FAILURE_LIMIT and
+        settings.AXES_LOCK_OUT_AT_FAILURE and
         is_user_lockable(request)
     ):
         log.warn('AXES: locked out {0} after repeated login attempts.'.format(
@@ -131,7 +131,7 @@ def log_user_logged_in(sender, request, user, **kwargs):
         get_client_str(username, ip_address, user_agent, path_info)
     ))
 
-    if not axes_settings.DISABLE_SUCCESS_ACCESS_LOG:
+    if not settings.AXES_DISABLE_SUCCESS_ACCESS_LOG:
         AccessLog.objects.create(
             user_agent=user_agent,
             ip_address=ip_address,
@@ -148,7 +148,7 @@ def log_user_logged_out(sender, request, user, **kwargs):
     """
     log.info('AXES: Successful logout by {0}.'.format(user))
 
-    if user and not axes_settings.DISABLE_ACCESS_LOG:
+    if user and not settings.AXES_DISABLE_ACCESS_LOG:
         AccessLog.objects.filter(
             username=user.get_username(),
             logout_time__isnull=True,

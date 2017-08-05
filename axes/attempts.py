@@ -1,10 +1,11 @@
+from datetime import timedelta
 from hashlib import md5
 
 from django.contrib.auth import get_user_model
 from django.core.cache import cache
 from django.utils import timezone
 
-from axes import settings as axes_settings
+from axes.conf import settings
 from axes.models import AccessAttempt
 from axes.utils import get_ip
 
@@ -14,11 +15,11 @@ def _query_user_attempts(request):
     Otherwise return None.
     """
     ip = get_ip(request)
-    username = request.POST.get(axes_settings.USERNAME_FORM_FIELD, None)
+    username = request.POST.get(settings.AXES_USERNAME_FORM_FIELD, None)
 
-    if axes_settings.ONLY_USER_FAILURES:
+    if settings.AXES_ONLY_USER_FAILURES:
         attempts = AccessAttempt.objects.filter(username=username)
-    elif axes_settings.USE_USER_AGENT:
+    elif settings.AXES_USE_USER_AGENT:
         ua = request.META.get('HTTP_USER_AGENT', '<unknown>')[:255]
         attempts = AccessAttempt.objects.filter(
             user_agent=ua, ip_address=ip, username=username, trusted=True
@@ -31,15 +32,15 @@ def _query_user_attempts(request):
     if not attempts:
         params = {'trusted': False}
 
-        if axes_settings.ONLY_USER_FAILURES:
+        if settings.AXES_ONLY_USER_FAILURES:
             params['username'] = username
-        elif axes_settings.LOCK_OUT_BY_COMBINATION_USER_AND_IP:
+        elif settings.AXES_LOCK_OUT_BY_COMBINATION_USER_AND_IP:
             params['username'] = username
             params['ip_address'] = ip
         else:
             params['ip_address'] = ip
 
-        if axes_settings.USE_USER_AGENT:
+        if settings.AXES_USE_USER_AGENT:
             params['user_agent'] = ua
 
         attempts = AccessAttempt.objects.filter(**params)
@@ -59,21 +60,21 @@ def get_cache_key(request_or_obj):
         ua = request_or_obj.user_agent
     else:
         ip = get_ip(request_or_obj)
-        un = request_or_obj.POST.get(axes_settings.USERNAME_FORM_FIELD, None)
+        un = request_or_obj.POST.get(settings.AXES_USERNAME_FORM_FIELD, None)
         ua = request_or_obj.META.get('HTTP_USER_AGENT', '<unknown>')[:255]
 
     ip = ip.encode('utf-8') if ip else ''.encode('utf-8')
     un = un.encode('utf-8') if un else ''.encode('utf-8')
     ua = ua.encode('utf-8') if ua else ''.encode('utf-8')
 
-    if axes_settings.ONLY_USER_FAILURES:
+    if settings.AXES_ONLY_USER_FAILURES:
         attributes = un
-    elif axes_settings.LOCK_OUT_BY_COMBINATION_USER_AND_IP:
+    elif settings.AXES_LOCK_OUT_BY_COMBINATION_USER_AND_IP:
         attributes = ip + un
     else:
         attributes = ip
 
-    if axes_settings.USE_USER_AGENT:
+    if settings.AXES_USE_USER_AGENT:
         attributes += ua
 
     cache_hash_key = 'axes-{}'.format(md5(attributes).hexdigest())
@@ -84,8 +85,13 @@ def get_cache_key(request_or_obj):
 def get_cache_timeout():
     """Returns timeout according to COOLOFF_TIME."""
     cache_timeout = None
-    if axes_settings.COOLOFF_TIME:
-        cache_timeout = axes_settings.COOLOFF_TIME.total_seconds()
+    cool_off = settings.AXES_COOLOFF_TIME
+    if cool_off:
+        if (isinstance(cool_off, int) or isinstance(cool_off, float)):
+            cache_timeout = timedelta(hours=cool_off).total_seconds()
+        else:
+            cache_timeout = cool_off.total_seconds()
+
     return cache_timeout
 
 
@@ -95,8 +101,11 @@ def get_user_attempts(request):
     cache_hash_key = get_cache_key(request)
     cache_timeout = get_cache_timeout()
 
-    cool_off = axes_settings.COOLOFF_TIME
+    cool_off = settings.AXES_COOLOFF_TIME
     if cool_off:
+        if (isinstance(cool_off, int) or isinstance(cool_off, float)):
+            cool_off = timedelta(hours=cool_off)
+
         for attempt in attempts:
             if attempt.attempt_time + cool_off < timezone.now():
                 if attempt.trusted:
@@ -121,17 +130,17 @@ def get_user_attempts(request):
 
 
 def ip_in_whitelist(ip):
-    if not axes_settings.IP_WHITELIST:
+    if not settings.AXES_IP_WHITELIST:
         return False
 
-    return ip in axes_settings.IP_WHITELIST
+    return ip in settings.AXES_IP_WHITELIST
 
 
 def ip_in_blacklist(ip):
-    if not axes_settings.IP_BLACKLIST:
+    if not settings.AXES_IP_BLACKLIST:
         return False
 
-    return ip in axes_settings.IP_BLACKLIST
+    return ip in settings.AXES_IP_BLACKLIST
 
 
 def is_user_lockable(request):
@@ -148,7 +157,7 @@ def is_user_lockable(request):
     try:
         field = getattr(get_user_model(), 'USERNAME_FIELD', 'username')
         kwargs = {
-            field: request.POST.get(axes_settings.USERNAME_FORM_FIELD)
+            field: request.POST.get(settings.AXES_USERNAME_FORM_FIELD)
         }
         user = get_user_model().objects.get(**kwargs)
 
@@ -168,10 +177,10 @@ def is_user_lockable(request):
 def is_already_locked(request):
     ip = get_ip(request)
 
-    if axes_settings.NEVER_LOCKOUT_WHITELIST and ip_in_whitelist(ip):
+    if settings.AXES_NEVER_LOCKOUT_WHITELIST and ip_in_whitelist(ip):
         return False
 
-    if axes_settings.ONLY_WHITELIST and not ip_in_whitelist(ip):
+    if settings.AXES_ONLY_WHITELIST and not ip_in_whitelist(ip):
         return True
 
     if ip_in_blacklist(ip):
@@ -184,14 +193,14 @@ def is_already_locked(request):
     failures_cached = cache.get(cache_hash_key)
     if failures_cached is not None:
         return (
-            failures_cached >= axes_settings.FAILURE_LIMIT and
-            axes_settings.LOCK_OUT_AT_FAILURE
+            failures_cached >= settings.AXES_FAILURE_LIMIT and
+            settings.AXES_LOCK_OUT_AT_FAILURE
         )
     else:
         for attempt in get_user_attempts(request):
             if (
-                attempt.failures_since_start >= axes_settings.FAILURE_LIMIT and
-                axes_settings.LOCK_OUT_AT_FAILURE
+                attempt.failures_since_start >= settings.AXES_FAILURE_LIMIT and
+                settings.AXES_LOCK_OUT_AT_FAILURE
             ):
                 return True
 
