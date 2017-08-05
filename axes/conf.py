@@ -42,6 +42,8 @@ class MyAppConf(AppConf):
 
     LOCKOUT_URL = None
 
+    COOLOFF_TIME = None
+
     VERBOSE = True
 
     # whitelist and blacklist
