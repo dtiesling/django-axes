@@ -21,8 +21,8 @@ Using https://github.com/mbi/django-simple-captcha you do the following:
 4. Create a captcha view for the above url that resets on captcha success and redirects::
 
     def locked_out(request):
-        if request.POST:
-            form = AxesCaptchaForm(request.POST)
+        if request.data:
+            form = AxesCaptchaForm(request.data)
             if form.is_valid():
                 ip = get_ip_address_from_request(request)
                 reset(ip=ip)
